@@ -1,0 +1,41 @@
+From d93b2051641ebfc4c5dcdc405ed0f26b9bcaa65a Mon Sep 17 00:00:00 2001
+From: Quentin Armitage <quentin@armitage.org.uk>
+Date: Sat, 25 Jul 2020 10:13:32 +0100
+Subject: [PATCH] vrrp: Don't remove unweighted track scripts from sync group
+ members
+
+Commit 3390697 - "vrrp: rewrote framework using list_head_t design"
+cleared the track_script list for any vrrp instance that was in a
+sync group. This was due to the old list structure allocating memory
+which had to be freed if the list was empty, but that is no longer
+the case with list_head.
+
+Signed-off-by: Quentin Armitage <quentin@armitage.org.uk>
+---
+ keepalived/vrrp/vrrp.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/keepalived/vrrp/vrrp.c b/keepalived/vrrp/vrrp.c
+index c8967eef..c7ded6b4 100644
+--- a/keepalived/vrrp/vrrp.c
++++ b/keepalived/vrrp/vrrp.c
+@@ -3406,7 +3406,7 @@ vrrp_complete_instance(vrrp_t * vrrp)
+ 		free_track_if_list(&vrrp->track_ifp);
+ 
+ 		/* Ignore any weighted script */
+-		list_for_each_entry_safe(sc, sc_tmp, &vrrp->track_script,e_list) {
++		list_for_each_entry_safe(sc, sc_tmp, &vrrp->track_script, e_list) {
+ 			if (sc->weight) {
+ 				report_config_error(CONFIG_GENERAL_ERROR, "(%s) ignoring "
+ 									  "tracked script %s with weights due to %s"
+@@ -3417,7 +3417,6 @@ vrrp_complete_instance(vrrp_t * vrrp)
+ 				free_track_script(sc);
+ 			}
+ 		}
+-		free_track_script_list(&vrrp->track_script);
+ 
+ 		/* Set tracking files to unweighted if weight not explicitly set, otherwise ignore */
+ 		list_for_each_entry_safe(tfl, tfl_tmp, &vrrp->track_file, e_list) {
+-- 
+2.33.1
+
