@@ -10,17 +10,13 @@
 
 Name: keepalived
 Summary: High Availability monitor built upon LVS, VRRP and service pollers
-Version: 2.2.4
-Release: 6%{?dist}
+Version: 2.2.8
+Release: 3%{?dist}
 License: GPLv2+
 URL: http://www.keepalived.org/
 
 Source0: http://www.keepalived.org/software/keepalived-%{version}.tar.gz
 Source1: keepalived.service
-
-Patch1: bz2028351-fix-dbus-policy-restrictions.patch
-Patch2: bz2102493-fix-variable-substitution.patch
-Patch3: bz2134749-fix-memory-leak-https-checks.patch
 
 Requires(post): systemd
 Requires(preun): systemd
@@ -61,9 +57,6 @@ infrastructures.
 
 %prep
 %setup -q
-%patch1 -p1
-%patch2 -p1
-%patch3 -p1
 
 %build
 %configure \
@@ -73,7 +66,7 @@ infrastructures.
     %{?with_snmp:--enable-snmp --enable-snmp-rfc} \
     %{?with_nftables:--enable-nftables --disable-iptables} \
     %{?with_sha1:--enable-sha1} \
-    %{?with_sha1:--enable-json} \
+    %{?with_json:--enable-json} \
     --with-init=systemd
 %{__make} %{?_smp_mflags} STRIP=/bin/true
 
@@ -82,6 +75,8 @@ rm -rf %{buildroot}
 make install DESTDIR=%{buildroot}
 rm -rf %{buildroot}%{_initrddir}/
 rm -rf %{buildroot}%{_sysconfdir}/keepalived/samples/
+mv %{buildroot}%{_sysconfdir}/keepalived/keepalived.conf.sample \
+   %{buildroot}%{_sysconfdir}/keepalived/keepalived.conf
 %{__install} -p -D -m 0644 %{SOURCE1} %{buildroot}%{_unitdir}/keepalived.service
 mkdir -p %{buildroot}%{_libexecdir}/keepalived
 
@@ -114,6 +109,12 @@ mkdir -p %{buildroot}%{_libexecdir}/keepalived
 %{_mandir}/man8/keepalived.8*
 
 %changelog
+* Fri Jun 30 2023 Ryan O'Hara <rohara@redhat.com> - 2.2.8-2
+- Fix keepalived.conf installation (#2215308)
+
+* Thu Jun 15 2023 Ryan O'Hara <rohara@redhat.com> - 2.2.8-1
+- Update to 2.2.8 (#2215308)
+
 * Fri Dec 23 2022 Ryan O'Hara <rohara@redhat.com> - 2.2.4-6
 - Fix unterminated endif in previous patch (#2134749)
 
