@@ -1,0 +1,55 @@
+From ff476e860e91c1a814ac038ee16790a2a5b950af Mon Sep 17 00:00:00 2001
+From: Quentin Armitage <quentin@armitage.org.uk>
+Date: Mon, 18 Jan 2021 14:38:15 +0000
+Subject: [PATCH 1/2] Revert "Explicitly set LOG_USER log facility when
+ syslogging"
+
+This reverts commit db3bcf7b891881e8e70954424f0fe88ec7d37ce0.
+
+This commit was just plain wrong. The facility should default to
+LOG_DAEMON (see keepalived(8) man page), but if --log-facility is
+specified, that is the facility to which log entries should be logged.
+---
+ lib/logger.c | 5 +----
+ lib/logger.h | 2 +-
+ 2 files changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/lib/logger.c b/lib/logger.c
+index a0cc2048..34c83f32 100644
+--- a/lib/logger.c
++++ b/lib/logger.c
+@@ -133,7 +133,7 @@ block_signals(sigset_t *cur_set)
+ #endif
+ 
+ void
+-vlog_message(int facility, const char* format, va_list args)
++vlog_message(const int facility, const char* format, va_list args)
+ {
+ #ifndef HAVE_SIGNALFD
+ 	sigset_t cur_set;
+@@ -213,9 +213,6 @@ vlog_message(int facility, const char* format, va_list args)
+ 			restore_signals = true;
+ #endif
+ 
+-		if (!(facility & LOG_FACMASK))
+-			facility |= LOG_USER;
+-
+ #if HAVE_VSYSLOG
+ 		vsyslog(facility, format, args);
+ #else
+diff --git a/lib/logger.h b/lib/logger.h
+index 7536536a..20b2a7e4 100644
+--- a/lib/logger.h
++++ b/lib/logger.h
+@@ -44,7 +44,7 @@ extern void open_log_file(const char *, const char *, const char *, const char *
+ extern void flush_log_file(void);
+ extern void update_log_file_perms(mode_t);
+ #endif
+-extern void vlog_message(int facility, const char* format, va_list args)
++extern void vlog_message(const int facility, const char* format, va_list args)
+ 	__attribute__ ((format (printf, 2, 0)));
+ extern void log_message(int priority, const char* format, ...)
+ 	__attribute__ ((format (printf, 2, 3)));
+-- 
+2.31.1
+

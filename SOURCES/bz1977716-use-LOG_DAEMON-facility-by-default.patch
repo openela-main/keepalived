@@ -1,0 +1,165 @@
+From 75ea1d31c17f4bb3a73590167658310bc9f67149 Mon Sep 17 00:00:00 2001
+From: Quentin Armitage <quentin@armitage.org.uk>
+Date: Mon, 18 Jan 2021 14:57:30 +0000
+Subject: [PATCH 2/2] all: log to LOG_DAEMON facility by default
+
+keepalived(8) man page states that the default log facility is LOG_DAEMON.
+Commit db3bcf7 - "Explicitly set LOG_USER log facility when syslogging"
+incorrectly set the facility to LOG_USER, and that has now been reverted.
+However, with that reverted, by default the VRRP process logs to LOG_LOCAL1
+and the checker and BFD processes log to LOG_LOCAL2, contrary to the
+documentation.
+
+Since no-one has commented that logs were not going to LOG_LOCAL1/2 since
+commit db3bcf7 (April 28 2020), it is safe to assume that no-one was relying
+on that. This commit therefore reverts to the documentation and by default
+logs everything to the LOG_DAEMON facility.
+
+Signed-off-by: Quentin Armitage <quentin@armitage.org.uk>
+---
+ keepalived/bfd/bfd_daemon.c     |  3 +--
+ keepalived/check/check_daemon.c |  3 +--
+ keepalived/core/main.c          |  7 +++----
+ keepalived/include/main.h       |  1 -
+ keepalived/vrrp/vrrp_daemon.c   |  3 +--
+ lib/logger.c                    |  2 ++
+ lib/logger.h                    | 10 ++++++++++
+ 7 files changed, 18 insertions(+), 11 deletions(-)
+
+diff --git a/keepalived/bfd/bfd_daemon.c b/keepalived/bfd/bfd_daemon.c
+index cf74eee3..47d87892 100644
+--- a/keepalived/bfd/bfd_daemon.c
++++ b/keepalived/bfd/bfd_daemon.c
+@@ -396,8 +396,7 @@ start_bfd_child(void)
+ 
+ 	/* Opening local BFD syslog channel */
+ 	if (!__test_bit(NO_SYSLOG_BIT, &debug))
+-		openlog(syslog_ident, LOG_PID | ((__test_bit(LOG_CONSOLE_BIT, &debug)) ? LOG_CONS : 0)
+-				    , (log_facility==LOG_DAEMON) ? LOG_LOCAL2 : log_facility);
++		open_syslog(syslog_ident);
+ 
+ #ifdef ENABLE_LOG_TO_FILE
+ 	if (log_file_name)
+diff --git a/keepalived/check/check_daemon.c b/keepalived/check/check_daemon.c
+index 5e03cc4c..63bdf07b 100644
+--- a/keepalived/check/check_daemon.c
++++ b/keepalived/check/check_daemon.c
+@@ -689,8 +689,7 @@ start_check_child(void)
+ 
+ 	/* Opening local CHECK syslog channel */
+ 	if (!__test_bit(NO_SYSLOG_BIT, &debug))
+-		openlog(syslog_ident, LOG_PID | ((__test_bit(LOG_CONSOLE_BIT, &debug)) ? LOG_CONS : 0)
+-				    , (log_facility==LOG_DAEMON) ? LOG_LOCAL2 : log_facility);
++		open_syslog(syslog_ident);
+ 
+ #ifdef ENABLE_LOG_TO_FILE
+ 	if (log_file_name)
+diff --git a/keepalived/core/main.c b/keepalived/core/main.c
+index be4488ea..756b2f12 100644
+--- a/keepalived/core/main.c
++++ b/keepalived/core/main.c
+@@ -149,7 +149,6 @@ static const struct child_term children_term[] = {
+ /* global var */
+ const char *version_string = VERSION_STRING;		/* keepalived version */
+ const char *conf_file = KEEPALIVED_CONFIG_FILE;		/* Configuration file */
+-int log_facility = LOG_DAEMON;				/* Optional logging facilities */
+ bool reload;						/* Set during a reload */
+ const char *main_pidfile;				/* overrule default pidfile */
+ static bool free_main_pidfile;
+@@ -2087,7 +2086,7 @@ keepalived_main(int argc, char **argv)
+ 	umask(umask_val);
+ 
+ 	/* Open log with default settings so we can log initially */
+-	openlog(PACKAGE_NAME, LOG_PID, log_facility);
++	open_syslog(PACKAGE_NAME);
+ 
+ #ifdef _MEM_CHECK_
+ 	mem_log_init(PACKAGE_NAME, "Parent process");
+@@ -2128,7 +2127,7 @@ keepalived_main(int argc, char **argv)
+ 	if (parse_cmdline(argc, argv)) {
+ 		closelog();
+ 		if (!__test_bit(NO_SYSLOG_BIT, &debug))
+-			openlog(PACKAGE_NAME, LOG_PID | ((__test_bit(LOG_CONSOLE_BIT, &debug)) ? LOG_CONS : 0) , log_facility);
++			open_syslog(PACKAGE_NAME);
+ 	}
+ 
+ 	if (__test_bit(LOG_CONSOLE_BIT, &debug))
+@@ -2212,7 +2211,7 @@ keepalived_main(int argc, char **argv)
+ 		if ((syslog_ident = make_syslog_ident(PACKAGE_NAME))) {
+ 			log_message(LOG_INFO, "Changing syslog ident to %s", syslog_ident);
+ 			closelog();
+-			openlog(syslog_ident, LOG_PID | ((__test_bit(LOG_CONSOLE_BIT, &debug)) ? LOG_CONS : 0), log_facility);
++			open_syslog(syslog_ident);
+ 		}
+ 		else
+ 			log_message(LOG_INFO, "Unable to change syslog ident");
+diff --git a/keepalived/include/main.h b/keepalived/include/main.h
+index 3e013bb6..6a34797b 100644
+--- a/keepalived/include/main.h
++++ b/keepalived/include/main.h
+@@ -51,7 +51,6 @@ enum daemon_bits {
+ extern const char *version_string;	/* keepalived version */
+ extern unsigned long daemon_mode;	/* Which child processes are run */
+ extern const char *conf_file;		/* Configuration file */
+-extern int log_facility;		/* Optional logging facilities */
+ #ifdef _WITH_VRRP_
+ extern pid_t vrrp_child;		/* VRRP child process ID */
+ extern const char *vrrp_pidfile;	/* overrule default pidfile */
+diff --git a/keepalived/vrrp/vrrp_daemon.c b/keepalived/vrrp/vrrp_daemon.c
+index baa5f5f2..e22f8a81 100644
+--- a/keepalived/vrrp/vrrp_daemon.c
++++ b/keepalived/vrrp/vrrp_daemon.c
+@@ -974,8 +974,7 @@ start_vrrp_child(void)
+ 		syslog_ident = PROG_VRRP;
+ 
+ 	if (!__test_bit(NO_SYSLOG_BIT, &debug))
+-		openlog(syslog_ident, LOG_PID | ((__test_bit(LOG_CONSOLE_BIT, &debug)) ? LOG_CONS : 0)
+-				    , (log_facility==LOG_DAEMON) ? LOG_LOCAL1 : log_facility);
++		open_syslog(syslog_ident);
+ 
+ #ifdef ENABLE_LOG_TO_FILE
+ 	if (log_file_name)
+diff --git a/lib/logger.c b/lib/logger.c
+index 34c83f32..7fad8ac6 100644
+--- a/lib/logger.c
++++ b/lib/logger.c
+@@ -40,6 +40,8 @@
+ /* Boolean flag - send messages to console as well as syslog */
+ static bool log_console = false;
+ 
++int log_facility = LOG_DAEMON;				/* Optional logging facilities */
++
+ #ifdef ENABLE_LOG_TO_FILE
+ /* File to write log messages to */
+ const char *log_file_name;
+diff --git a/lib/logger.h b/lib/logger.h
+index 20b2a7e4..c6f29138 100644
+--- a/lib/logger.h
++++ b/lib/logger.h
+@@ -30,8 +30,13 @@
+ #include <sys/stat.h>
+ #endif
+ 
++#include "bitops.h"
++#include "utils.h"
++
+ #define	MAX_LOG_MSG	255
+ 
++extern int log_facility;		/* Optional logging facilities */
++
+ #ifdef ENABLE_LOG_TO_FILE
+ extern const char *log_file_name;
+ #endif
+@@ -51,4 +56,9 @@ extern void log_message(int priority, const char* format, ...)
+ extern void conf_write(FILE *fp, const char *format, ...)
+ 	__attribute__ ((format (printf, 2, 3)));
+ 
++static inline void
++open_syslog(const char *ident)
++{
++	openlog(ident, LOG_PID | ((__test_bit(LOG_CONSOLE_BIT, &debug)) ? LOG_CONS : 0), log_facility);
++}
+ #endif
+-- 
+2.31.1
+
