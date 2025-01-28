@@ -10,7 +10,7 @@
 Name: keepalived
 Summary: High Availability monitor built upon LVS, VRRP and service pollers
 Version: 2.1.5
-Release: 9%{?dist}
+Release: 10%{?dist}
 License: GPLv2+
 URL: http://www.keepalived.org/
 Group: System Environment/Daemons
@@ -22,6 +22,7 @@ Patch1: bz1977716-revert-explicit-set-LOG_USER-facility.patch
 Patch2: bz1977716-use-LOG_DAEMON-facility-by-default.patch
 Patch3: bz2028350-fix-dbus-policy-restrictions.patch
 Patch4: bz2054249-fix-unweighted-track-scripts.patch
+Patch5: RHEL-49561-validate-ipset-names-better.patch
 
 Requires(post): systemd
 Requires(preun): systemd
@@ -61,6 +62,7 @@ infrastructures.
 %patch2 -p1
 %patch3 -p1
 %patch4 -p1
+%patch5 -p1
 
 %build
 %configure \
@@ -111,6 +113,10 @@ mkdir -p %{buildroot}%{_libexecdir}/keepalived
 %{_mandir}/man8/keepalived.8*
 
 %changelog
+* Mon Dec  2 2024 Christine Caulfield <ccaulfie@redhat.com> - 2.1.5-10
+- CVE-2024-41184
+  Resolves: RHEL-49561
+
 * Thu Jul 21 2022 Ryan O'Hara <rohara@redhat.com> - 2.1.5-9
 - Fix removal of unweighted track scripts from sync group (#2054249)
 
