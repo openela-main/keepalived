@@ -11,13 +11,14 @@
 Name: keepalived
 Summary: High Availability monitor built upon LVS, VRRP and service pollers
 Version: 2.2.8
-Release: 4%{?dist}
+Release: 5%{?dist}
 License: GPLv2+
 URL: http://www.keepalived.org/
 
 Source0: http://www.keepalived.org/software/keepalived-%{version}.tar.gz
 Source1: keepalived.service
 Patch0: validate-ipset-names-better.patch
+Patch1: RHEL-81944-check-child-register-again.patch
 
 Requires(post): systemd
 Requires(preun): systemd
@@ -110,9 +111,13 @@ mkdir -p %{buildroot}%{_libexecdir}/keepalived
 %{_mandir}/man8/keepalived.8*
 
 %changelog
-* Fri Dec 13 2024 Christine Caulfield <ccaulfie@redhat.com> - 2.2.8-3
-- Validate vrrp ipset names for CVE-2024-41184
-  Resolves: RHEL-49557
+* Wed Oct  8 2025 Christine Caulfield <ccaulfie@redhat.com> - 2.2.8-5
+- lvs: if lost misc check child register checker again
+  Resolves: RHEL-81944
+
+* Mon Dec  2 2024 Christine Caulfield <ccaulfie@redhat.com> - 2.2.8-4
+- Better validation of ipsetnames for CVE-2024-41184
+  Resolves: RHEL-49558
 
 * Fri Jun 30 2023 Ryan O'Hara <rohara@redhat.com> - 2.2.8-2
 - Fix keepalived.conf installation (#2215308)

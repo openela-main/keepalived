@@ -1,0 +1,41 @@
+commit d2f5e5595a511ff62934c77cb62f82bdb2320e29
+Author: Yonglong Li <liyonglong@chinatelecom.cn>
+Date:   Fri Dec 29 11:03:08 2023 +0800
+
+    lvs: if lost misc check child register checker agagin
+    
+    issue: misc check_child_thread timeout and remove child_pid
+    form rb_data, timeout callback of check_child_thread is not be
+    called, if at this time misc script done and exit, and child
+    termination will do nothing because child_pid was remove form
+    rb_data. in this case timeou callback will not register checker
+    again, the checker will lost.
+    
+    fix: if lost misc check child register checker again
+    
+    Signed-off-by: Yonglong Li <liyonglong@chinatelecom.cn>
+
+diff --git a/keepalived/check/check_misc.c b/keepalived/check/check_misc.c
+index b2260d5f..c388e89d 100644
+--- a/keepalived/check/check_misc.c
++++ b/keepalived/check/check_misc.c
+@@ -337,9 +337,10 @@ misc_check_child_thread(thread_ref_t thread)
+ 					/* The process does not exist, and we should
+ 					 * have reaped its exit status, otherwise it
+ 					 * would exist as a zombie process. */
+-					log_message(LOG_INFO, "Misc script %s child (PID %d) lost", misck_checker->script.args[0], pid);
++					log_message(LOG_INFO, "Misc script %s child (PID %d) lost, register checker again", misck_checker->script.args[0], pid);
+ 					misck_checker->state = SCRIPT_STATE_IDLE;
+ 					timeout = 0;
++					goto recheck;
+ 				} else {
+ 					log_message(LOG_INFO, "kill -%d of process %s(%d) with new state %u failed with errno %d", sig_num, misck_checker->script.args[0], pid, misck_checker->state, errno);
+ 					timeout = 1000;
+@@ -488,6 +489,7 @@ misc_check_child_thread(thread_ref_t thread)
+ 		}
+ 	}
+ 
++recheck:
+ 	/* Register next timer checker */
+ 	next_time = timer_add_long(misck_checker->last_ran, checker->retry_it ? checker->delay_before_retry : checker->delay_loop);
+ 	next_time = timer_sub_now(next_time);
