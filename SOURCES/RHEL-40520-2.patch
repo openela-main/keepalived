@@ -1,0 +1,126 @@
+commit a205e87ecd856f45ff7f84066edebca831738704
+Author: Quentin Armitage <quentin@armitage.org.uk>
+Date:   Sun Jun 9 17:07:18 2024 +0100
+
+    vrrp: remove need for route to have configured interface to track it
+    
+    If a virtual route did not have an interface configured, keepalived would
+    log a warning saying that it could not track the route, and then would
+    disable tracking of that route.
+    
+    It appears that it is not necessary to know the interface in order to track
+    the route, and in any event the netlink message received after adding the
+    route identifies the interface for the route if it is appropriate.
+    
+    So this commit removes the requirement to specify an interface in order to
+    track a route.
+    
+    Signed-off-by: Quentin Armitage <quentin@armitage.org.uk>
+
+diff --git a/keepalived/core/keepalived_netlink.c b/keepalived/core/keepalived_netlink.c
+index 198d0e10..da3596fd 100644
+--- a/keepalived/core/keepalived_netlink.c
++++ b/keepalived/core/keepalived_netlink.c
+@@ -276,9 +276,10 @@ compare_route(struct rtattr *tb[RTA_MAX + 1], ip_route_t *route, uint32_t table,
+ 	if (route->oif) {
+ 		if (!tb[RTA_OIF] || route->oif->ifindex != *PTR_CAST(uint32_t, RTA_DATA(tb[RTA_OIF])))
+ 			return false;
+-	} else {
+-		if (route->set && route->configured_ifindex &&
+-		    (!tb[RTA_OIF] || route->configured_ifindex != *PTR_CAST(uint32_t, RTA_DATA(tb[RTA_OIF]))))
++	} else if (route->set) {
++		if (!tb[RTA_OIF] != !route->configured_ifindex)
++			return false;
++		if (tb[RTA_OIF] && route->configured_ifindex != *PTR_CAST(uint32_t, RTA_DATA(tb[RTA_OIF])))
+ 			return false;
+ 	}
+ 
+@@ -2360,9 +2361,8 @@ netlink_route_filter(__attribute__((unused)) struct sockaddr_nl *snl, struct nlm
+ 			route->configured_ifindex = *PTR_CAST(uint32_t, RTA_DATA(tb[RTA_OIF]));
+ 			if (route->oif && route->oif->ifindex != route->configured_ifindex)
+ 				log_message(LOG_INFO, "route added index %" PRIu32 " != config index %u", route->configured_ifindex, route->oif->ifindex);
+-		}
+-		else
+-			log_message(LOG_INFO, "New route doesn't have i/f index");
++		} else
++			route->configured_ifindex = 0;
+ 
+ 		return 0;
+ 	}
+diff --git a/keepalived/vrrp/vrrp.c b/keepalived/vrrp/vrrp.c
+index 9486f935..2970591b 100644
+--- a/keepalived/vrrp/vrrp.c
++++ b/keepalived/vrrp/vrrp.c
+@@ -1764,7 +1764,7 @@ vrrp_restore_interface(vrrp_t * vrrp, bool advF, bool force)
+ 
+ 	/* remove virtual routes */
+ 	if (!list_empty(&vrrp->vroutes))
+-		vrrp_handle_iproutes(vrrp, IPROUTE_DEL, false);
++		vrrp_handle_iproutes(vrrp, IPROUTE_DEL, force);
+ 
+ 	/* empty the delayed arp list */
+ 	vrrp_remove_delayed_arp(vrrp);
+diff --git a/keepalived/vrrp/vrrp_iproute.c b/keepalived/vrrp/vrrp_iproute.c
+index c2791945..91311800 100644
+--- a/keepalived/vrrp/vrrp_iproute.c
++++ b/keepalived/vrrp/vrrp_iproute.c
+@@ -531,9 +531,10 @@ netlink_rtlist(list_head_t *rt_list, int cmd, bool force)
+ 
+ 	list_for_each_entry(ip_route, rt_list, e_list) {
+ 		if ((cmd == IPROUTE_DEL) == ip_route->set || force) {
+-			if (!netlink_route(ip_route, cmd))
+-				ip_route->set = (cmd == IPROUTE_ADD);
+-			else if (cmd != IPROUTE_ADD)
++			if (!netlink_route(ip_route, cmd)) {
++				if (cmd == IPROUTE_DEL)
++					ip_route->set = false;
++			} else if (cmd != IPROUTE_ADD)
+ 				ip_route->set = false;
+ 		}
+ 	}
+@@ -1871,21 +1872,6 @@ alloc_route(list_head_t *rt_list, const vector_t *strvec, bool allow_track_group
+ 			report_config_error(CONFIG_GENERAL_ERROR, "Route cannot be tracked if protocol is not RTPROT_KEEPALIVED(%d), resetting protocol", RTPROT_KEEPALIVED);
+ 		new->protocol = RTPROT_KEEPALIVED;
+ 		new->mask |= IPROUTE_BIT_PROTOCOL;
+-
+-		if (!new->oif) {
+-			/* Alternative is to track oif from when route last added.
+-			 * The interface will need to be added temporarily. tracking_obj_t will need
+-			 * a flag to specify permanent track, and a counter for number of temporary
+-			 * trackers. If the termporary tracker count becomes 0 and there is no permanent
+-			 * track, then the tracking_obj_t will need to be removed.
+-			 *
+-			 * We also have a problem if using nexthop, since the route will only be deleted
+-			 * when the interfaces for all of the hops have gone down. We would need to track
+-			 * all of the interfaces being used, and only mark the route as down if all the
+-			 * interfaces are down. */
+-			report_config_error(CONFIG_GENERAL_ERROR, "Warning - cannot track route %s with no interface specified, not tracking", dest);
+-			new->dont_track = true;
+-		}
+ 	}
+ 
+ 	if (new->track_group && !new->oif) {
+diff --git a/keepalived/vrrp/vrrp_scheduler.c b/keepalived/vrrp/vrrp_scheduler.c
+index fc40d59d..8c1747c6 100644
+--- a/keepalived/vrrp/vrrp_scheduler.c
++++ b/keepalived/vrrp/vrrp_scheduler.c
+@@ -65,6 +65,8 @@
+ #ifdef _WITH_LVS_
+ #include "ipvswrapper.h"
+ #endif
++#include "keepalived_netlink.h"
++
+ 
+ /* For load testing recvmsg() */
+ /* #define DEBUG_RECVMSG */
+@@ -266,7 +268,9 @@ vrrp_init_state(list_head_t *l)
+ #endif
+ 
+ 			/* Set interface state */
+-			vrrp_restore_interface(vrrp, false, false);
++			netlink_error_ignore = ESRCH;		// returned if route does not exist
++			vrrp_restore_interface(vrrp, false, true);
++			netlink_error_ignore = 0;
+ 			if (is_up &&
+ 			    new_state != VRRP_STATE_FAULT &&
+ 			    !vrrp->num_script_init &&

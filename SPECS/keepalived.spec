@@ -11,14 +11,16 @@
 Name: keepalived
 Summary: High Availability monitor built upon LVS, VRRP and service pollers
 Version: 2.2.8
-Release: 5%{?dist}
+Release: 6%{?dist}
 License: GPLv2+
 URL: http://www.keepalived.org/
 
 Source0: http://www.keepalived.org/software/keepalived-%{version}.tar.gz
 Source1: keepalived.service
 Patch0: validate-ipset-names-better.patch
-Patch1: RHEL-81944-check-child-register-again.patch
+Patch1: RHEL-81939-check-child-register-again.patch
+Patch2: RHEL-40520-1.patch
+Patch3: RHEL-40520-2.patch
 
 Requires(post): systemd
 Requires(preun): systemd
@@ -111,9 +113,13 @@ mkdir -p %{buildroot}%{_libexecdir}/keepalived
 %{_mandir}/man8/keepalived.8*
 
 %changelog
-* Wed Oct  8 2025 Christine Caulfield <ccaulfie@redhat.com> - 2.2.8-5
+* Mon May 12 2025 Christine Caulfield <ccaulfie@redhat.com> - 2.2.8-6
+- fix "Keepalived claims that blackhole route doesn't have interface and can't be tracked"
+  Resolves: RHEL-40520
+
+* Mon Mar 10 2025 Christine Caulfield <ccaulfie@redhat.com> - 2.2.8-5
 - lvs: if lost misc check child register checker again
-  Resolves: RHEL-81944
+  Resolves: RHEL-81939
 
 * Mon Dec  2 2024 Christine Caulfield <ccaulfie@redhat.com> - 2.2.8-4
 - Better validation of ipsetnames for CVE-2024-41184
